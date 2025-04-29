@@ -1,0 +1,7 @@
+name = "lean_topsort"
+version = "0.1.0"
+defaultTargets = ["lean_topsort"]
+
+[[lean_lib]]
+name = "LeanTopsort"
+
