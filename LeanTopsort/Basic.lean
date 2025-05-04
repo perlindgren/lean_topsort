@@ -1,49 +1,51 @@
-
+-- We want to declare a DAG, so edges are directed
+-- We represent an edge as a Nat referring to the
+-- index of the source node in the DAG
 
 structure Node where
-  val : Nat
-  inputs : List Nat  -- index in DAG.nodes
+  val   : Nat
+  edges : List Nat  -- input edges
 deriving Repr, DecidableEq, Inhabited
 
 #check Node
 
 -- terminal, this will be node 0
-def t0  : Node := { val := 0,  inputs := [] }
+def t0  : Node := { val := 0,  edges := [] }
 #eval t0
 
 -- terminal, this will be node 1
-def t1  : Node := { val := 1,  inputs := [] }
+def t1  : Node := { val := 1,  edges := [] }
 #eval t0
 
 
 -- v1, this will be node 2
-def v1 : Node := { val := 0, inputs := [ 0, 1 ] }
---   v1
---  /  \
--- t0    t1
+def v1 : Node := { val := 0, edges := [ 0, 1 ] }
+--            v1
+--           /  \
+--          t0  t1
 
 -- v2, this will be node 3
-def v2 : Node := { val := 0, inputs := [ 2, 1 ] }
+def v2 : Node := { val := 0, edges := [ 2, 1 ] }
 --            v2
 --           /  \
---          v1   t1
+--          v1  t1
 --         /  \
---        t0    t1
+--        t0  t1
 
-#eval t0.inputs.length -- 0 inputs
-#eval v1.inputs.length -- 2 inputs
-#eval v2.inputs.length -- 2 inputs
+#eval t0.edges.length -- 0 inputs
+#eval v1.edges.length -- 2 inputs
+#eval v2.edges.length -- 2 inputs
 #eval (v1 = v2) -- false, they are not the same, inputs differ, DecidableEq
 
-def v3 : Node := { val:= 0, inputs := [ 2, 1 ] } -- another node with same val and inputs
+def v3 : Node := { val:= 0, edges := [ 2, 1 ] } -- another node with same val and inputs
 #eval (v2 = v3) -- true, they are the same
 
-def v4 : Node := { val:= 1, inputs := [ 2, 1 ] } -- another node with same inputs
+def v4 : Node := { val:= 1, edges := [ 2, 1 ] } -- another node with same inputs
 #eval (v2 = v4) -- false, they are not the same, value differs
 
 structure DAG where
   nodes: List Node
-  p: ∀ (h:i < nodes.length) (j: Nat), j ∈ nodes[i].inputs -> j < i
+  p: ∀ (h:i < nodes.length) (j: Nat), j ∈ nodes[i].edges -> j < i
 deriving Repr
 
 def dag_empty: DAG :=  { nodes:= [], p:= by simp }
@@ -52,7 +54,7 @@ instance : Inhabited DAG where
   default := dag_empty
 
 def add_node (d : DAG) (n: Node): DAG :=
-  let check := n.inputs.all (λ k => k < d.nodes.length)
+  let check := n.edges.all (λ k => k < d.nodes.length)
   match ch_cond: check with
   | false => panic "reference to self or future node"
   | true  => {
@@ -87,7 +89,7 @@ def dt0t1 := add_node dt0 t1      -- index 1
 def dt0t1v1 := add_node dt0t1 v1  -- index 2
 #eval! dt0t1v1
 
-def d_err := add_node dt0t1v1 { val:= 0, inputs := [0,1,2,3]} -- index 3 is not in dt0t1tv1
+def d_err := add_node dt0t1v1 { val:= 0, edges := [0,1,2,3]} -- index 3 is not in dt0t1tv1
 #eval! d_err -- this should panic
 
 def dt0t1v1v2 := add_node dt0t1v1 v2  -- index 3
@@ -117,7 +119,7 @@ def dfs_fuel (dag:DAG) (edges: List Nat) (fuel: Nat): Nat :=
     match edges with
     | []         => 0
     | edge :: el =>
-      let e : List Nat := dag.nodes[edge]!.inputs
+      let e : List Nat := dag.nodes[edge]!.edges
       1 + dfs_fuel dag e f + dfs_fuel dag el f
 
 def dfs (dag: DAG) (e: Nat) : Nat :=
@@ -137,7 +139,6 @@ def dfs (dag: DAG) (e: Nat) : Nat :=
 -- the return value of the first edge
 -- the return value of the remaining edges
 def dfs_f_fuel (dag:DAG) (edges: List Nat) (f: Nat -> Nat -> Nat -> Nat) (fuel: Nat): Nat :=
-  let _ := println! "here"
   match fuel with
   | 0     => panic "too little fuel"
   | fuel' + 1 =>
@@ -145,7 +146,7 @@ def dfs_f_fuel (dag:DAG) (edges: List Nat) (f: Nat -> Nat -> Nat -> Nat) (fuel: 
     | []         => 0
     | edge :: el =>
       let n := dag.nodes[edge]!
-      let e := n.inputs
+      let e := n.edges
       f n.val (dfs_f_fuel dag e f fuel') (dfs_f_fuel dag el f fuel')
 
 def dfs_f (dag: DAG) (e: Nat) (f: Nat -> Nat -> Nat -> Nat): Nat :=
@@ -161,3 +162,30 @@ def sum (v e el : Nat): Nat := v + e + el
 #eval (dfs_f dt0t1v1v2 1 sum) -- 1, only the t1 node
 #eval (dfs_f dt0t1v1v2 2 sum) -- 1, v1 node, v1 + t0 + t1, 0 + 0 + 1
 #eval (dfs_f dt0t1v1v2 3 sum) -- 2, v2 node, v2 + v1 + t0 + t1 + t1, 0 + 0 + 0 + 1 + 1
+
+
+
+-- Topological sorted graphs determines the evaluation order
+
+--        t0 ---|    |
+--              | v1 |---|    |
+--        t1 ---|    |   | v2 |
+--            |          |    |---
+--             ----------|    |
+--
+
+-- In this case v1 needs to be evaluated before we can evaluate v2
+-- as v2 depends on the output of v2
+
+-- The add_node approach ensures that graphs are topologically sorted
+-- Previously we showed how we can apply a function while doing the dfs
+
+-- Assume now that the operation
+
+
+
+structure TOP where
+  dag    : DAG
+  visted : List Nat × Nat -- first Nat is the node index, snd Nat is number of visited inputs
+
+-- def get_indexes (dag: DAG) (edge: Nat)
